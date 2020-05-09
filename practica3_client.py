@@ -25,6 +25,17 @@ class VideoClient(object):
         self.app.addLabel("title", "Cliente Multimedia P2P - Redes2 ")
         self.app.addImage("video", "imgs/webcam.gif")
 
+        # Definición subventana listar usuarios
+        with self.app.subWindow("Usuarios", size="500x470"):
+            self.app.label("Lista de usuarios")
+            self.app.getLabelWidget("Lista de usuarios").config(font=("Sans Serif", "16", "bold"))
+            self.app.label("Pulsa sobre uno para establecer una conexión:")
+            self.app.addListBox("users", [])
+            self.app.setListBoxWidth("users", 23)
+            self.app.setListBoxHeight("users", 18)
+            self.app.setListBoxMulti("users", multi=False)
+            self.app.addButtons(["Seleccionar"], self.buttonsCallback)
+
         # Registramos la función de captura de video
         # Esta misma función también sirve para enviar un vídeo
         self.cap = cv2.VideoCapture(0)
@@ -32,7 +43,7 @@ class VideoClient(object):
         self.app.registerEvent(self.capturaVideo)
 
         # Añadir los botones
-        self.app.addButtons(["Conectar", "Colgar", "Cambiar Nick", "Salir"], self.buttonsCallback)
+        self.app.addButtons(["Conectar", "Colgar", "Usuarios", "Buscar", "Cambiar Nick", "Salir"], self.buttonsCallback)
 
         # Barra de estado
         # Debe actualizarse con información útil sobre la llamada (duración, FPS, etc...)
@@ -81,6 +92,7 @@ class VideoClient(object):
             nick = self.app.textBox("Conexión",
                                     "Introduce el nick del usuario a buscar")
         elif button == "Cambiar Nick":
+            # Entrada para cambiar de nick
             new_nick = self.app.stringBox("new_nick", "Nuevo nick")
             password = self.app.stringBox("password", "Contraseña")
             user_reg = ds_request.register(new_nick, password, self.user_ip, self.user_port)
@@ -89,9 +101,31 @@ class VideoClient(object):
                 self.user_nickname = new_nick
             else:
                 if user_reg[1] == 'WRONG_PASS':
-                    self.app.errorBox("wrong_pass", "¡El usuario ya existe!")
+                    self.app.errorBox("Usuario existe", "¡El usuario ya existe!")
                 else:
-                    self.app.errorBox("syntax_error", "Los campos no se han rellenado correctamente.")
+                    self.app.errorBox("Error sintaxis", "Los campos no se han rellenado correctamente.")
+        elif button == "Buscar":
+            # Entrada para buscar y mostrar la información de un usuario
+            user = self.app.stringBox("Buscar", "Buscar usuario")
+            user_query = ds_request.query_user(user)
+            if user_query[0] == 'OK':
+                self.app.infoBox("User info", user_query[2:])
+            else:
+                self.app.errorBox("Not found", "¡El usuario no ha sido encontrado!")
+        elif button == "Usuarios":
+            # Muestra en una subventana la lista de usuarios con los que poder conectarse
+            self.app.openSubWindow("Usuarios")
+            info, users = ds_request.list_users()
+            self.app.updateListBox("users", [i.split()[0] for i in users], select=False, callFunction=True)
+            self.app.stopSubWindow()
+            self.app.showSubWindow("Usuarios")
+        elif button == "Seleccionar":
+            selected = self.app.getListBox("users")
+            if not selected:
+                self.app.errorBox("Error seleccion", "No se ha seleccionado ningun usuario")
+            else:
+                self.app.hideSubWindow("Usuarios", useStopFunction=True)
+                print(selected[0])
 
 
 class Access(object):
@@ -142,12 +176,12 @@ class Access(object):
                 vc.start()
             else:
                 if user_reg[1] == 'WRONG_PASS':
-                    self.app.errorBox("wrong_pass", "¡El usuario ya existe!")
+                    self.app.errorBox("Usuario existe", "¡El usuario ya existe!")
                     self.app.clearEntry("userEnt")
                     self.app.clearEntry("passEnt")
                     self.app.setFocus("userEnt")
                 else:
-                    self.app.errorBox("syntax_error", "Rellene los campos correctamente.")
+                    self.app.errorBox("Error de sintaxis", "Rellene los campos correctamente.")
         elif button == "Log in":
             nick = self.app.getEntry("userEnt2")
             password = self.app.getEntry("passEnt2")
@@ -161,12 +195,12 @@ class Access(object):
                     vc.start()
                 else:
                     if user_reg[1] == 'WRONG_PASS':
-                        self.app.errorBox("wrong_pass", "¡Contraseña incorrecta!")
+                        self.app.errorBox("Clave incorrecta", "¡Contraseña incorrecta!")
                         self.app.clearEntry("userEnt2")
                     else:
-                        self.app.errorBox("syntax_error", "Rellene los campos correctamente.")
+                        self.app.errorBox("Error campos", "Rellene los campos correctamente.")
             else:
-                self.app.errorBox("not_found", "¡El usuario no ha sido encontrado!")
+                self.app.errorBox("Not found", "¡El usuario no ha sido encontrado!")
                 self.app.clearEntry("userEnt2")
                 self.app.clearEntry("passEnt2")
                 self.app.setFocus("userEnt2")
