@@ -55,8 +55,10 @@ def tcp_conn(mensaje, users=False):
             data = s.recv(BUFFER_SIZE)
             current_data = data.decode()
             total_data += current_data
-            # Si hemos tenemos ya todos los usuarios esperados dejamos de recibir
-            if len(total_data.split("#")) - 1 == tam:
+            # Si tenemos ya todos los usuarios esperados dejamos de recibir
+            if len(total_data.split("#")) - 1 >= tam:
                 break
+            # if len(data) < BUFFER_SIZE:
+            #     break
         s.close()
         return total_data

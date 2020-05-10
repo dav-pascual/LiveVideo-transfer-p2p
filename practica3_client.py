@@ -4,12 +4,10 @@ from PIL import Image, ImageTk
 import numpy as np
 import cv2
 import ds_request
+import call_request
 
 
 class VideoClient(object):
-    user_nickname = None
-    user_ip = None
-    user_port = 0
 
     def __init__(self, window_size, user_nickname, user_ip, user_port):
         # Inicializamos datos del usuario
@@ -25,25 +23,30 @@ class VideoClient(object):
         self.app.addLabel("title", "Cliente Multimedia P2P - Redes2 ")
         self.app.addImage("video", "imgs/webcam.gif")
 
-        # Definición subventana listar usuarios
-        with self.app.subWindow("Usuarios", size="500x470"):
-            self.app.label("Lista de usuarios")
-            self.app.getLabelWidget("Lista de usuarios").config(font=("Sans Serif", "16", "bold"))
-            self.app.label("Pulsa sobre uno para establecer una conexión:")
-            self.app.addListBox("users", [])
-            self.app.setListBoxWidth("users", 23)
-            self.app.setListBoxHeight("users", 18)
-            self.app.setListBoxMulti("users", multi=False)
-            self.app.addButtons(["Seleccionar"], self.buttonsCallback)
-
         # Registramos la función de captura de video
         # Esta misma función también sirve para enviar un vídeo
+        # VideoCapture object
         self.cap = cv2.VideoCapture(0)
         self.app.setPollTime(20)
         self.app.registerEvent(self.capturaVideo)
 
         # Añadir los botones
-        self.app.addButtons(["Conectar", "Colgar", "Usuarios", "Buscar", "Cambiar Nick", "Salir"], self.buttonsCallback)
+        self.app.addButtons(["Colgar", "Pausar", "Seguir", "Conectar", "Usuarios",
+                             "Buscar", "Cambiar Nick", "Salir"], self.buttonsCallback)
+        self.app.hideButton("Pausar")
+        self.app.hideButton("Seguir")
+        self.app.hideButton("Colgar")
+
+        # Definición subventana listar usuarios
+        with self.app.subWindow("Usuarios", size="500x470"):
+            self.app.label("Lista de usuarios")
+            self.app.getLabelWidget("Lista de usuarios").config(font=("Sans Serif", "16", "bold"))
+            self.app.label("Selecciona uno para establecer una conexión:")
+            self.app.addListBox("users", [])
+            self.app.setListBoxWidth("users", 23)
+            self.app.setListBoxHeight("users", 18)
+            self.app.setListBoxMulti("users", multi=False)
+            self.app.addButtons(["Seleccionar"], self.buttonsCallback)
 
         # Barra de estado
         # Debe actualizarse con información útil sobre la llamada (duración, FPS, etc...)
@@ -82,6 +85,14 @@ class VideoClient(object):
             self.cap.set(cv2.CAP_PROP_FRAME_WIDTH, 640)
             self.cap.set(cv2.CAP_PROP_FRAME_HEIGHT, 480)
 
+    def iniciar_llamada(self, ):
+        self.app.hideButton("Conectar")
+        self.app.hideButton("Usuarios")
+        self.app.hideButton("Buscar")
+        self.app.hideButton("Cambiar Nick")
+        self.app.showButton("Pausar")
+        self.app.showButton("Colgar")
+
     # Función que gestiona los callbacks de los botones
     def buttonsCallback(self, button):
         if button == "Salir":
@@ -91,10 +102,21 @@ class VideoClient(object):
             # Entrada del nick del usuario a conectar
             nick = self.app.textBox("Conexión",
                                     "Introduce el nick del usuario a buscar")
+            user_query = ds_request.query_user(nick)
+            if user_query[0] == 'OK':
+                resp = call_request.llamar(user_query[1:3], self.user_nickname, self.user_port)
+                if resp[0] == 'CALL_ACCEPTED':
+                    self.iniciar_llamada()
+                elif resp[0] == 'CALL_DENIED':
+                    self.app.errorBox("denied", "El usuario ha rechazado la llamada")
+                elif resp[0] == 'CALL_BUSY':
+                    self.app.errorBox("busy", "El usuario esta actualmente en una llamada")
+            else:
+                self.app.errorBox("Not found", "¡El usuario no ha sido encontrado!")
         elif button == "Cambiar Nick":
             # Entrada para cambiar de nick
-            new_nick = self.app.stringBox("new_nick", "Nuevo nick")
-            password = self.app.stringBox("password", "Contraseña")
+            new_nick = self.app.textBox("new_nick", "Nuevo nick")
+            password = self.app.textBox("password", "Contraseña")
             user_reg = ds_request.register(new_nick, password, self.user_ip, self.user_port)
             if user_reg[0] == 'OK':
                 self.app.infoBox("registered", "Cambio de nick correcto")
@@ -106,7 +128,7 @@ class VideoClient(object):
                     self.app.errorBox("Error sintaxis", "Los campos no se han rellenado correctamente.")
         elif button == "Buscar":
             # Entrada para buscar y mostrar la información de un usuario
-            user = self.app.stringBox("Buscar", "Buscar usuario")
+            user = self.app.textBox("Buscar", "Buscar usuario")
             user_query = ds_request.query_user(user)
             if user_query[0] == 'OK':
                 self.app.infoBox("User info", user_query[2:])
@@ -116,16 +138,39 @@ class VideoClient(object):
             # Muestra en una subventana la lista de usuarios con los que poder conectarse
             self.app.openSubWindow("Usuarios")
             info, users = ds_request.list_users()
-            self.app.updateListBox("users", [i.split()[0] for i in users], select=False, callFunction=True)
-            self.app.stopSubWindow()
-            self.app.showSubWindow("Usuarios")
+            if info[0] == 'OK':
+                self.app.updateListBox("users", [i.split()[0] for i in users if i], select=False, callFunction=True)
+                self.app.stopSubWindow()
+                self.app.showSubWindow("Usuarios")
+            else:
+                self.app.errorBox("Error listar", "Se ha producido un error al listar los usuarios")
         elif button == "Seleccionar":
+            # Obtiene el usuario seleccionado de la lista y su informacion
             selected = self.app.getListBox("users")
             if not selected:
-                self.app.errorBox("Error seleccion", "No se ha seleccionado ningun usuario")
+                self.app.errorBox("Error seleccion", "No se ha seleccionado ningun usuario", parent="Usuarios")
             else:
                 self.app.hideSubWindow("Usuarios", useStopFunction=True)
-                print(selected[0])
+                user_query = ds_request.query_user(selected[0])
+                if user_query[0] == 'OK':
+                    resp = call_request.llamar(user_query[1:3], self.user_nickname, self.user_port)
+                    if resp[0] == 'CALL_ACCEPTED':
+                        self.iniciar_llamada()
+                    elif resp[0] == 'CALL_DENIED':
+                        self.app.errorBox("denied", "El usuario ha rechazado la llamada")
+                    elif resp[0] == 'CALL_BUSY':
+                        self.app.errorBox("busy", "El usuario esta actualmente en una llamada")
+                else:
+                    self.app.errorBox("Error user", "Ha occurido un error al seleccionar el usuario")
+        elif button == "Colgar":
+            self.app.hideButton("Pausar")
+            self.app.hideButton("Colgar")
+            self.app.showButton("Conectar")
+            self.app.showButton("Usuarios")
+            self.app.showButton("Buscar")
+            self.app.showButton("Cambiar Nick")
+
+            # todo Codigo de cerrar llamada y lo que conlleva
 
 
 class Access(object):
@@ -200,7 +245,11 @@ class Access(object):
                     else:
                         self.app.errorBox("Error campos", "Rellene los campos correctamente.")
             else:
-                self.app.errorBox("Not found", "¡El usuario no ha sido encontrado!")
+                if user_query[1] == 'USER_UNKNOWN':
+                    self.app.errorBox("User not found", "¡El usuario no existe!")
+                    self.app.clearEntry("userEnt2")
+                else:
+                    self.app.errorBox("Error logina", "Rellene los campos correctamente.")
                 self.app.clearEntry("userEnt2")
                 self.app.clearEntry("passEnt2")
                 self.app.setFocus("userEnt2")
