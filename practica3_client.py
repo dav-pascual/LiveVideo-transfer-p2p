@@ -5,6 +5,8 @@ import numpy as np
 import cv2
 import ds_request
 import call_request
+from call import Call
+from time import time
 
 
 class VideoClient(object):
@@ -14,6 +16,7 @@ class VideoClient(object):
         self.user_nickname = user_nickname
         self.user_ip = user_ip
         self.user_port = user_port
+        self.llamada = None
 
         # Creamos una variable que contenga el GUI principal
         self.app = gui("Redes2 - P2P", window_size)
@@ -31,10 +34,10 @@ class VideoClient(object):
         self.app.registerEvent(self.capturaVideo)
 
         # Añadir los botones
-        self.app.addButtons(["Colgar", "Pausar", "Seguir", "Conectar", "Usuarios",
+        self.app.addButtons(["Colgar", "Pausar", "Reanudar", "Conectar", "Usuarios",
                              "Buscar", "Cambiar Nick", "Salir"], self.buttonsCallback)
         self.app.hideButton("Pausar")
-        self.app.hideButton("Seguir")
+        self.app.hideButton("Reanudar")
         self.app.hideButton("Colgar")
 
         # Definición subventana listar usuarios
@@ -55,7 +58,7 @@ class VideoClient(object):
     def start(self):
         self.app.go()
 
-    # Función que captura el frame a mostrar en cada momento
+    # Función que captura el frame a mostrar en cada momento y enviarlo en caso de que haya una llamada en curso
     def capturaVideo(self):
 
         # Capturamos un frame de la cámara o del vídeo
@@ -67,8 +70,20 @@ class VideoClient(object):
         # Lo mostramos en el GUI
         self.app.setImageData("video", img_tk, fmt='PhotoImage')
 
-    # Aquí tendría que el código que envia el frame a la red
-    # ...
+        # Si hay una llamada enviamos el frame
+        if self.llamada is not None and not self.llamdada.pause():
+            # Compresión JPG al 50% de resolución
+            encode_param = [cv2.IMWRITE_JPEG_QUALITY, 50]
+            result, encimg = cv2.imencode('.jpg', frame, encode_param)
+            if not result:
+                print('Error al codificar imagen')
+            encimg = encimg.tobytes()
+
+            # Creamos el mensaje y enviamos
+            cabecera = "{}#{}#{}#{}#".format(str(self.llamada.id_send), str(time()), "640x480", "20")
+            self.llamada.inc_idsend()
+            payload = bytes(cabecera) + encimg
+            self.llamada.enviar_frame(payload)
 
     # Establece la resolución de la imagen capturada
     def setImageResolution(self, resolution):
@@ -85,13 +100,16 @@ class VideoClient(object):
             self.cap.set(cv2.CAP_PROP_FRAME_WIDTH, 640)
             self.cap.set(cv2.CAP_PROP_FRAME_HEIGHT, 480)
 
-    def iniciar_llamada(self, ):
+    def iniciar_llamada(self, dst_ip, dst_port):
         self.app.hideButton("Conectar")
         self.app.hideButton("Usuarios")
         self.app.hideButton("Buscar")
         self.app.hideButton("Cambiar Nick")
         self.app.showButton("Pausar")
         self.app.showButton("Colgar")
+
+        self.llamada = Call(dst_ip, dst_port)
+        # TODO iniciar obj llamada / hilos enviar video / recibir video / atender peticiones control
 
     # Función que gestiona los callbacks de los botones
     def buttonsCallback(self, button):
@@ -106,7 +124,7 @@ class VideoClient(object):
             if user_query[0] == 'OK':
                 resp = call_request.llamar(user_query[1:3], self.user_nickname, self.user_port)
                 if resp[0] == 'CALL_ACCEPTED':
-                    self.iniciar_llamada()
+                    self.iniciar_llamada(user_query[3], user_query[4])
                 elif resp[0] == 'CALL_DENIED':
                     self.app.errorBox("denied", "El usuario ha rechazado la llamada")
                 elif resp[0] == 'CALL_BUSY':
@@ -145,7 +163,7 @@ class VideoClient(object):
             else:
                 self.app.errorBox("Error listar", "Se ha producido un error al listar los usuarios")
         elif button == "Seleccionar":
-            # Obtiene el usuario seleccionado de la lista y su informacion
+            # Obtiene el usuario seleccionado para llamar
             selected = self.app.getListBox("users")
             if not selected:
                 self.app.errorBox("Error seleccion", "No se ha seleccionado ningun usuario", parent="Usuarios")
@@ -155,7 +173,7 @@ class VideoClient(object):
                 if user_query[0] == 'OK':
                     resp = call_request.llamar(user_query[1:3], self.user_nickname, self.user_port)
                     if resp[0] == 'CALL_ACCEPTED':
-                        self.iniciar_llamada()
+                        self.iniciar_llamada(user_query[3], user_query[4])
                     elif resp[0] == 'CALL_DENIED':
                         self.app.errorBox("denied", "El usuario ha rechazado la llamada")
                     elif resp[0] == 'CALL_BUSY':
@@ -169,8 +187,12 @@ class VideoClient(object):
             self.app.showButton("Usuarios")
             self.app.showButton("Buscar")
             self.app.showButton("Cambiar Nick")
+            # TODO Codigo de cerrar llamada y lo que conlleva
 
-            # todo Codigo de cerrar llamada y lo que conlleva
+        elif button == "Pausar":
+            pass
+        elif button == "Reanudar":
+            pass
 
 
 class Access(object):
@@ -256,8 +278,8 @@ class Access(object):
 
 
 if __name__ == '__main__':
-    rg = Access()
-    rg.start()
+    access = Access()
+    access.start()
 
     # Crear aquí los threads de lectura, de recepción y,
     # en general, todo el código de inicialización que sea necesario
