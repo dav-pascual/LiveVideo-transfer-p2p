@@ -3,8 +3,8 @@ import socket
 BUFFER_SIZE = 1024
 
 
-def llamar(dst_user, src_nick, src_port):
-    mensaje = 'CALLING ' + src_nick + ' ' + src_port
+def llamar(dst_user, src_nick, srcUDPport):
+    mensaje = 'CALLING ' + src_nick + ' ' + srcUDPport
     resp = tcp_conn(mensaje, dst_user[0], dst_user[1], resp=True)
     print("calling: " + resp)
     return resp.split(" ")

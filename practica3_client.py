@@ -7,16 +7,23 @@ import ds_request
 import call_request
 from call import Call
 from time import time
+import socket
+import threading
+
+
+BUFFER_SIZE = 1024
 
 
 class VideoClient(object):
 
-    def __init__(self, window_size, user_nickname, user_ip, user_port):
+    def __init__(self, window_size, user_nickname, user_ip, tcp_port):
         # Inicializamos datos del usuario
         self.user_nickname = user_nickname
         self.user_ip = user_ip
-        self.user_port = user_port
+        self.tcp_port = tcp_port
+        self.udp_port = 8020
         self.llamada = None
+        self.version = 'V0'
 
         # Creamos una variable que contenga el GUI principal
         self.app = gui("Redes2 - P2P", window_size)
@@ -30,8 +37,23 @@ class VideoClient(object):
         # Esta misma función también sirve para enviar un vídeo
         # VideoCapture object
         self.cap = cv2.VideoCapture(0)
-        self.app.setPollTime(20)
-        self.app.registerEvent(self.capturaVideo)
+        # self.app.setPollTime(20)
+        # self.app.registerEvent(self.capturaVideo)
+
+        # Definimos hilos
+        # Hilo de mostrar video en GUI y enviarlo
+        self.myVideo_th = threading.Thread(target=self.capturaVideo)
+        self.myVideo_th.daemon = True
+        self.myVideo_th.start()
+        # Hilo de recibir video
+        self.recvVideo_th = None
+        # Hilo de mostrar video recibido almacenado en buffer
+        self.bufferVideo_th = threading.Thread(target=self.reproducirVideo)
+        self.play_flag = False
+        # Hilo de atender comandos de control
+        self.callCtrl_th = threading.Thread(target=self.call_control)
+        self.callCtrl_th.daemon = True
+        self.callCtrl_th.start()
 
         # Añadir los botones
         self.app.addButtons(["Colgar", "Pausar", "Reanudar", "Conectar", "Usuarios",
@@ -39,6 +61,10 @@ class VideoClient(object):
         self.app.hideButton("Pausar")
         self.app.hideButton("Reanudar")
         self.app.hideButton("Colgar")
+
+        # Definición subventana del video del peer de la llamada
+        with self.app.subWindow("peer", size="640x500"):
+            self.app.addImage("video_peer", "imgs/webcam.gif")
 
         # Definición subventana listar usuarios
         with self.app.subWindow("Usuarios", size="500x470"):
@@ -58,32 +84,53 @@ class VideoClient(object):
     def start(self):
         self.app.go()
 
-    # Función que captura el frame a mostrar en cada momento y enviarlo en caso de que haya una llamada en curso
+    # Función que captura el frame a mostrar en cada momento y lo envia en caso de que haya una llamada en curso
     def capturaVideo(self):
+        while True:
+            # Capturamos un frame de la cámara o del vídeo
+            ret, frame = self.cap.read()
+            frame = cv2.resize(frame, (640, 480))
+            cv2_im = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
+            img_tk = ImageTk.PhotoImage(Image.fromarray(cv2_im))
 
-        # Capturamos un frame de la cámara o del vídeo
-        ret, frame = self.cap.read()
-        frame = cv2.resize(frame, (640, 480))
-        cv2_im = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
-        img_tk = ImageTk.PhotoImage(Image.fromarray(cv2_im))
+            # Lo mostramos en el GUI
+            self.app.setImageData("video", img_tk, fmt='PhotoImage')
 
-        # Lo mostramos en el GUI
-        self.app.setImageData("video", img_tk, fmt='PhotoImage')
+            # Si hay una llamada enviamos el frame
+            if self.llamada is not None and not self.llamada.pause:
+                # Compresión JPG al 50% de resolución
+                encode_param = [cv2.IMWRITE_JPEG_QUALITY, 50]
+                result, encimg = cv2.imencode('.jpg', frame, encode_param)
+                if not result:
+                    print('Error al codificar imagen')
+                encimg = encimg.tobytes()
 
-        # Si hay una llamada enviamos el frame
-        if self.llamada is not None and not self.llamdada.pause():
-            # Compresión JPG al 50% de resolución
-            encode_param = [cv2.IMWRITE_JPEG_QUALITY, 50]
-            result, encimg = cv2.imencode('.jpg', frame, encode_param)
-            if not result:
-                print('Error al codificar imagen')
-            encimg = encimg.tobytes()
+                # Creamos el mensaje y enviamos
+                cabecera = "{}#{}#{}#{}#".format(str(self.llamada.id_send), str(time()), "640x480", "20")
+                self.llamada.inc_idsend()
+                payload = bytes(cabecera) + encimg
+                self.llamada.enviar_frame(payload)
 
-            # Creamos el mensaje y enviamos
-            cabecera = "{}#{}#{}#{}#".format(str(self.llamada.id_send), str(time()), "640x480", "20")
-            self.llamada.inc_idsend()
-            payload = bytes(cabecera) + encimg
-            self.llamada.enviar_frame(payload)
+            # Los frames se obtienen con cierto intervalo
+            time.sleep(0.02)
+
+    def reproducirVideo(self):
+        while self.play_flag:
+            if self.llamada.buffering:
+                continue
+            else:
+                if not self.llamada.empty_buffer():
+                    frame = self.llamada.buffer.pop(0)[1]
+                else:
+                    continue  # TODO activar buffering?
+                encimg = frame['encimg']
+                # Descompresión de los datos, una vez recibidos
+                decimg = cv2.imdecode(np.frombuffer(encimg, np.uint8), 1)
+                # Conversión de formato para su uso en el GUI
+                cv2_im = cv2.cvtColor(decimg, cv2.COLOR_BGR2RGB)
+                img_tk = ImageTk.PhotoImage(Image.fromarray(cv2_im))
+                # Lo mostramos en el GUI
+                self.app.setImageData("video_peer", img_tk, fmt='PhotoImage')
 
     # Establece la resolución de la imagen capturada
     def setImageResolution(self, resolution):
@@ -100,7 +147,23 @@ class VideoClient(object):
             self.cap.set(cv2.CAP_PROP_FRAME_WIDTH, 640)
             self.cap.set(cv2.CAP_PROP_FRAME_HEIGHT, 480)
 
-    def iniciar_llamada(self, dst_ip, dst_port):
+    def iniciar_llamada(self, dst_ip, dstTCPport, dstUDPport, rcv=False):
+        if self.llamada is None or rcv:
+            self.llamada = Call(self.user_ip, self.tcp_port, dst_ip, dstUDPport, dstTCPport)
+        else:
+            self.app.errorBox("BUSY", "¡Ya hay una llamada en curso!")
+            return
+
+        # Abrimos subventana para mostrar video del peer
+        self.app.openSubWindow("peer")
+
+        # Hilo de recibir video
+        self.recvVideo_th = threading.Thread(target=self.llamada.recibir_frames)
+        self.recvVideo_th.start()
+        # Hilo de mostrar video recibido almacenado en buffer
+        self.bufferVideo_th.start()
+        self.play_flag = True
+
         self.app.hideButton("Conectar")
         self.app.hideButton("Usuarios")
         self.app.hideButton("Buscar")
@@ -108,8 +171,66 @@ class VideoClient(object):
         self.app.showButton("Pausar")
         self.app.showButton("Colgar")
 
-        self.llamada = Call(dst_ip, dst_port)
-        # TODO iniciar obj llamada / hilos enviar video / recibir video / atender peticiones control
+    def finalizar_llamada(self):
+        # Dejamos de mostrar video recibido
+        self.play_flag = False
+        # Dejamos de recibir video, cerramos socket y eliminamos referencia a la llamada
+        self.llamada.finalizar_sesion()
+        self.llamada = None
+
+        self.app.hideSubWindow("peer", useStopFunction=True)
+        self.app.hideButton("Pausar")
+        self.app.hideButton("Colgar")
+        self.app.showButton("Conectar")
+        self.app.showButton("Usuarios")
+        self.app.showButton("Buscar")
+        self.app.showButton("Cambiar Nick")
+
+    def call_control(self):
+        # Abrimos socket TCP de recepcion de comandos de control
+        control_sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+        control_sock.bind((self.user_ip, self.tcp_port))
+        control_sock.listen(1)
+
+        while True:
+            connection, client_address = control_sock.accept()
+            try:
+                data = connection.recv(BUFFER_SIZE)  # TODO timeout?
+                if not data:
+                    continue
+                current_data = data.decode()
+                print("received: " + current_data)
+                command = current_data.split(" ")
+                if command[0] == "CALLING":
+                    user_query = ds_request.query_user(command[1])
+                    if user_query[0] == 'OK' and self.version in user_query[5].split("#"):
+                        if self.llamada is None:
+                            mensaje = "CALL_ACCEPTED " + self.user_nickname + " " + self.udp_port
+                            connection.sendall(bytes(mensaje, encoding='utf8'))
+                            print("resp: " + mensaje)
+                            self.iniciar_llamada(user_query[3], user_query[4], command[2], rcv=True)
+                        else:
+                            mensaje = "CALL_BUSY"
+                            connection.sendall(bytes(mensaje, encoding='utf8'))
+                            print("resp: " + mensaje)
+                    else:
+                        mensaje = "CALL_DENIED " + self.user_nickname
+                        connection.sendall(bytes(mensaje, encoding='utf8'))
+                        print("resp: " + mensaje)
+                elif self.llamada is not None:
+                    if command[0] == "CALL_HOLD":
+                        self.llamada.pause = True
+                    elif command[0] == "CALL_RESUME":
+                        self.llamada.pause = False
+                    elif command[0] == "CALL_END":
+                        self.finalizar_llamada()
+                    else:
+                        pass
+                else:
+                    pass
+            finally:
+                connection.close()
+        control_sock.close()
 
     # Función que gestiona los callbacks de los botones
     def buttonsCallback(self, button):
@@ -122,9 +243,9 @@ class VideoClient(object):
                                     "Introduce el nick del usuario a buscar")
             user_query = ds_request.query_user(nick)
             if user_query[0] == 'OK':
-                resp = call_request.llamar(user_query[1:3], self.user_nickname, self.user_port)
+                resp = call_request.llamar(user_query[1:3], self.user_nickname, self.udp_port)
                 if resp[0] == 'CALL_ACCEPTED':
-                    self.iniciar_llamada(user_query[3], user_query[4])
+                    self.iniciar_llamada(user_query[3], user_query[4], resp[2])
                 elif resp[0] == 'CALL_DENIED':
                     self.app.errorBox("denied", "El usuario ha rechazado la llamada")
                 elif resp[0] == 'CALL_BUSY':
@@ -135,7 +256,7 @@ class VideoClient(object):
             # Entrada para cambiar de nick
             new_nick = self.app.textBox("new_nick", "Nuevo nick")
             password = self.app.textBox("password", "Contraseña")
-            user_reg = ds_request.register(new_nick, password, self.user_ip, self.user_port)
+            user_reg = ds_request.register(new_nick, password, self.user_ip, self.tcp_port)
             if user_reg[0] == 'OK':
                 self.app.infoBox("registered", "Cambio de nick correcto")
                 self.user_nickname = new_nick
@@ -171,9 +292,9 @@ class VideoClient(object):
                 self.app.hideSubWindow("Usuarios", useStopFunction=True)
                 user_query = ds_request.query_user(selected[0])
                 if user_query[0] == 'OK':
-                    resp = call_request.llamar(user_query[1:3], self.user_nickname, self.user_port)
+                    resp = call_request.llamar(user_query[1:3], self.user_nickname, self.udp_port)
                     if resp[0] == 'CALL_ACCEPTED':
-                        self.iniciar_llamada(user_query[3], user_query[4])
+                        self.iniciar_llamada(user_query[3], user_query[4], resp[2])
                     elif resp[0] == 'CALL_DENIED':
                         self.app.errorBox("denied", "El usuario ha rechazado la llamada")
                     elif resp[0] == 'CALL_BUSY':
@@ -181,18 +302,12 @@ class VideoClient(object):
                 else:
                     self.app.errorBox("Error user", "Ha occurido un error al seleccionar el usuario")
         elif button == "Colgar":
-            self.app.hideButton("Pausar")
-            self.app.hideButton("Colgar")
-            self.app.showButton("Conectar")
-            self.app.showButton("Usuarios")
-            self.app.showButton("Buscar")
-            self.app.showButton("Cambiar Nick")
-            # TODO Codigo de cerrar llamada y lo que conlleva
-
+            call_request.finalizar([self.llamada.dst_ip, self.llamada.dstTCPport], self.user_nickname)
+            self.finalizar_llamada()
         elif button == "Pausar":
-            pass
+            call_request.pausar([self.llamada.dst_ip, self.llamada.dstTCPport], self.user_nickname)
         elif button == "Reanudar":
-            pass
+            call_request.reanudar([self.llamada.dst_ip, self.llamada.dstTCPport], self.user_nickname)
 
 
 class Access(object):
@@ -209,7 +324,7 @@ class Access(object):
         self.app.addSecretEntry("passEnt", 2, 1)
         self.app.addLabel("user_ip", "IP:", 3, 0)
         self.app.addEntry("user_ip", 3, 1)
-        self.app.addLabel("user_port", "Puerto:", 4, 0)
+        self.app.addLabel("user_port", "Puerto TCP:", 4, 0)
         self.app.addEntry("user_port", 4, 1)
 
         self.app.addButtons(["Registrarse"], self.buttonsCallback, colspan=2)
