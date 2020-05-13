@@ -7,28 +7,31 @@ VERSION = 'V0'
 
 
 def register(nick, password, user_ip, user_port):
-    mensaje = 'REGISTER ' + nick + ' ' + user_ip + ' ' + user_port + ' ' + password + ' ' + VERSION
+    mensaje = 'REGISTER ' + nick + ' ' + user_ip + ' ' + str(user_port) + ' ' + password + ' ' + VERSION
+    print("--> " + mensaje)
     resp = tcp_conn(mensaje)
-    print("register: " + resp)
+    print("<-- " + resp)
     return resp.split(" ")
 
 
 def query_user(nick):
     mensaje = 'QUERY ' + nick
+    print("--> " + mensaje)
     resp = tcp_conn(mensaje)
-    print("query_user: " + resp)
+    print("<-- " + resp)
     return resp.split(" ")
 
 
 def list_users():
     mensaje = 'LIST_USERS'
+    print("--> " + mensaje)
     resp = tcp_conn(mensaje, users=True)
-    users = resp.split("#")                   # Separamos los usuarios con el delimitador
-    del users[-1]                             # Eliminamos ultimo elemento vacio
+    users = resp.split("#")                     # Separamos los usuarios con el delimitador
+    # del users[-1]                             # Eliminamos ultimo elemento vacio
     first_elem = users[0].split(" ")
-    info = first_elem[:3]                     # Extraemos info de la respuesta del primer elem
-    users[0] = ' '.join(first_elem[3:])       # Eliminamos esta info de la lista users
-    print("list_users: " + ' '.join(info))
+    info = first_elem[:3]                       # Extraemos info de la respuesta del primer elem
+    print("<-- " + ' '.join(info) + " [users...]")
+    users[0] = ' '.join(first_elem[3:])         # Eliminamos esta info de la lista users
     return info, users
 
 

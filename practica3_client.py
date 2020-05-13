@@ -6,7 +6,7 @@ import cv2
 import ds_request
 import call_request
 from call import Call
-from time import time
+from time import time, sleep
 import socket
 import threading
 
@@ -20,7 +20,7 @@ class VideoClient(object):
         # Inicializamos datos del usuario
         self.user_nickname = user_nickname
         self.user_ip = user_ip
-        self.tcp_port = tcp_port
+        self.tcp_port = int(tcp_port)
         self.udp_port = 8020
         self.llamada = None
         self.version = 'V0'
@@ -41,6 +41,7 @@ class VideoClient(object):
         # self.app.registerEvent(self.capturaVideo)
 
         # Definimos hilos
+        self.exit_flag = False
         # Hilo de mostrar video en GUI y enviarlo
         self.myVideo_th = threading.Thread(target=self.capturaVideo)
         self.myVideo_th.daemon = True
@@ -72,7 +73,7 @@ class VideoClient(object):
             self.app.getLabelWidget("Lista de usuarios").config(font=("Sans Serif", "16", "bold"))
             self.app.label("Selecciona uno para establecer una conexión:")
             self.app.addListBox("users", [])
-            self.app.setListBoxWidth("users", 23)
+            self.app.setListBoxWidth("users", 30)
             self.app.setListBoxHeight("users", 18)
             self.app.setListBoxMulti("users", multi=False)
             self.app.addButtons(["Seleccionar"], self.buttonsCallback)
@@ -86,7 +87,7 @@ class VideoClient(object):
 
     # Función que captura el frame a mostrar en cada momento y lo envia en caso de que haya una llamada en curso
     def capturaVideo(self):
-        while True:
+        while not self.exit_flag:
             # Capturamos un frame de la cámara o del vídeo
             ret, frame = self.cap.read()
             frame = cv2.resize(frame, (640, 480))
@@ -108,11 +109,11 @@ class VideoClient(object):
                 # Creamos el mensaje y enviamos
                 cabecera = "{}#{}#{}#{}#".format(str(self.llamada.id_send), str(time()), "640x480", "20")
                 self.llamada.inc_idsend()
-                payload = bytes(cabecera) + encimg
+                payload = bytes(cabecera, encoding='utf8') + encimg
                 self.llamada.enviar_frame(payload)
 
-            # Los frames se obtienen con cierto intervalo
-            time.sleep(0.02)
+            # Los frames se obtienen (y envian) con cierto intervalo
+            sleep(0.02)
 
     def reproducirVideo(self):
         while self.play_flag:
@@ -177,7 +178,7 @@ class VideoClient(object):
         # Dejamos de recibir video, cerramos socket y eliminamos referencia a la llamada
         self.llamada.finalizar_sesion()
         self.llamada = None
-
+        # Volvemos al estado de GUI normal
         self.app.hideSubWindow("peer", useStopFunction=True)
         self.app.hideButton("Pausar")
         self.app.hideButton("Colgar")
@@ -199,24 +200,24 @@ class VideoClient(object):
                 if not data:
                     continue
                 current_data = data.decode()
-                print("received: " + current_data)
+                print("<-- " + current_data)
                 command = current_data.split(" ")
                 if command[0] == "CALLING":
                     user_query = ds_request.query_user(command[1])
                     if user_query[0] == 'OK' and self.version in user_query[5].split("#"):
                         if self.llamada is None:
-                            mensaje = "CALL_ACCEPTED " + self.user_nickname + " " + self.udp_port
+                            mensaje = "CALL_ACCEPTED " + self.user_nickname + " " + str(self.udp_port)
+                            print("--> " + mensaje)
                             connection.sendall(bytes(mensaje, encoding='utf8'))
-                            print("resp: " + mensaje)
                             self.iniciar_llamada(user_query[3], user_query[4], command[2], rcv=True)
                         else:
                             mensaje = "CALL_BUSY"
+                            print("--> " + mensaje)
                             connection.sendall(bytes(mensaje, encoding='utf8'))
-                            print("resp: " + mensaje)
                     else:
                         mensaje = "CALL_DENIED " + self.user_nickname
+                        print("--> " + mensaje)
                         connection.sendall(bytes(mensaje, encoding='utf8'))
-                        print("resp: " + mensaje)
                 elif self.llamada is not None:
                     if command[0] == "CALL_HOLD":
                         self.llamada.pause = True
@@ -236,14 +237,20 @@ class VideoClient(object):
     def buttonsCallback(self, button):
         if button == "Salir":
             # Salimos de la aplicación
+            if self.llamada:
+                self.finalizar_llamada()
+            self.exit_flag = True
+            sleep(0.3)
             self.app.stop()
         elif button == "Conectar":
             # Entrada del nick del usuario a conectar
             nick = self.app.textBox("Conexión",
                                     "Introduce el nick del usuario a buscar")
+            if not nick:
+                return
             user_query = ds_request.query_user(nick)
             if user_query[0] == 'OK':
-                resp = call_request.llamar(user_query[1:3], self.user_nickname, self.udp_port)
+                resp = call_request.llamar(user_query[3:5], self.user_nickname, self.udp_port)
                 if resp[0] == 'CALL_ACCEPTED':
                     self.iniciar_llamada(user_query[3], user_query[4], resp[2])
                 elif resp[0] == 'CALL_DENIED':
@@ -255,7 +262,11 @@ class VideoClient(object):
         elif button == "Cambiar Nick":
             # Entrada para cambiar de nick
             new_nick = self.app.textBox("new_nick", "Nuevo nick")
+            if not new_nick:
+                return
             password = self.app.textBox("password", "Contraseña")
+            if not password:
+                return
             user_reg = ds_request.register(new_nick, password, self.user_ip, self.tcp_port)
             if user_reg[0] == 'OK':
                 self.app.infoBox("registered", "Cambio de nick correcto")
@@ -268,17 +279,18 @@ class VideoClient(object):
         elif button == "Buscar":
             # Entrada para buscar y mostrar la información de un usuario
             user = self.app.textBox("Buscar", "Buscar usuario")
-            user_query = ds_request.query_user(user)
-            if user_query[0] == 'OK':
-                self.app.infoBox("User info", user_query[2:])
-            else:
-                self.app.errorBox("Not found", "¡El usuario no ha sido encontrado!")
+            if user:
+                user_query = ds_request.query_user(user)
+                if user_query[0] == 'OK':
+                    self.app.infoBox("User info", user_query[2:])
+                else:
+                    self.app.errorBox("Not found", "¡El usuario no ha sido encontrado!")
         elif button == "Usuarios":
             # Muestra en una subventana la lista de usuarios con los que poder conectarse
             self.app.openSubWindow("Usuarios")
             info, users = ds_request.list_users()
             if info[0] == 'OK':
-                self.app.updateListBox("users", [i.split()[0] for i in users if i], select=False, callFunction=True)
+                self.app.updateListBox("users", [i.split()[:-1] for i in users if i], select=False, callFunction=True)
                 self.app.stopSubWindow()
                 self.app.showSubWindow("Usuarios")
             else:
@@ -290,9 +302,9 @@ class VideoClient(object):
                 self.app.errorBox("Error seleccion", "No se ha seleccionado ningun usuario", parent="Usuarios")
             else:
                 self.app.hideSubWindow("Usuarios", useStopFunction=True)
-                user_query = ds_request.query_user(selected[0])
+                user_query = ds_request.query_user(selected[0][0])
                 if user_query[0] == 'OK':
-                    resp = call_request.llamar(user_query[1:3], self.user_nickname, self.udp_port)
+                    resp = call_request.llamar(user_query[3:5], self.user_nickname, self.udp_port)
                     if resp[0] == 'CALL_ACCEPTED':
                         self.iniciar_llamada(user_query[3], user_query[4], resp[2])
                     elif resp[0] == 'CALL_DENIED':

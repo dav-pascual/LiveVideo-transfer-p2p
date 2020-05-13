@@ -35,7 +35,7 @@ class Call(object):
         self.id_send += 1
 
     def enviar_frame(self, mensaje):
-        self.send_sock.sendto(mensaje, (self.dst_ip, self.dstUDPport))
+        self.send_sock.sendto(mensaje, (self.dst_ip, int(self.dstUDPport)))
 
     def empty_buffer(self):
         if self.buffer:
