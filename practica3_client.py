@@ -113,25 +113,22 @@ class VideoClient(object):
                 self.llamada.enviar_frame(payload)
 
             # Los frames se obtienen (y envian) con cierto intervalo
-            sleep(0.05)
+            sleep(0.025)
 
     def reproducirVideo(self):
         while self.play_flag:
-            if self.llamada.buffering:
-                continue
-            else:
+            if not self.llamada.buffering:
                 if not self.llamada.empty_buffer():
                     frame = self.llamada.buffer.pop(0)[1]
-                else:
-                    continue  # TODO activar buffering?
-                encimg = frame['encimg']
-                # Descompresión de los datos, una vez recibidos
-                decimg = cv2.imdecode(np.frombuffer(encimg, np.uint8), 1)
-                # Conversión de formato para su uso en el GUI
-                cv2_im = cv2.cvtColor(decimg, cv2.COLOR_BGR2RGB)
-                img_tk = ImageTk.PhotoImage(Image.fromarray(cv2_im))
-                # Lo mostramos en el GUI
-                self.app.setImageData("video_peer", img_tk, fmt='PhotoImage')
+                    encimg = frame['encimg']
+                    # Descompresión de los datos, una vez recibidos
+                    decimg = cv2.imdecode(np.frombuffer(encimg, np.uint8), 1)
+                    # Conversión de formato para su uso en el GUI
+                    cv2_im = cv2.cvtColor(decimg, cv2.COLOR_BGR2RGB)
+                    img_tk = ImageTk.PhotoImage(Image.fromarray(cv2_im))
+                    # Lo mostramos en el GUI
+                    self.app.setImageData("video_peer", img_tk, fmt='PhotoImage')
+            sleep(0.05)
 
     # Establece la resolución de la imagen capturada
     def setImageResolution(self, resolution):

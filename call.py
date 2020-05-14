@@ -12,7 +12,7 @@ class Call(object):
         self.finalizar = False
         self.pause = False
         self.buffering = True
-        self.buffer_size = 40
+        self.buffer_size = 20
         self.id_send = 0
         self.src_ip = src_ip
         self.srcUDPport = srcUDPport
