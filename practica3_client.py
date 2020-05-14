@@ -65,7 +65,7 @@ class VideoClient(object):
 
         # Definición subventana del video del peer de la llamada
         with self.app.subWindow("peer", size="640x500"):
-            self.app.addImage("video_peer", "imgs/webcam.gif")
+            self.app.addImage("video_peer", "imgs/webcam2.gif")
 
         # Definición subventana listar usuarios
         with self.app.subWindow("Usuarios", size="500x470"):
@@ -157,13 +157,14 @@ class VideoClient(object):
 
         # Abrimos subventana para mostrar video del peer
         self.app.openSubWindow("peer")
+        self.app.showSubWindow("peer")
 
         # Hilo de recibir video
         self.recvVideo_th = threading.Thread(target=self.llamada.recibir_frames)
         self.recvVideo_th.start()
         # Hilo de mostrar video recibido almacenado en buffer
-        self.bufferVideo_th.start()
         self.play_flag = True
+        self.bufferVideo_th.start()
 
         self.app.hideButton("Conectar")
         self.app.hideButton("Usuarios")
@@ -175,11 +176,13 @@ class VideoClient(object):
     def finalizar_llamada(self):
         # Dejamos de mostrar video recibido
         self.play_flag = False
+        sleep(0.1)
         # Dejamos de recibir video, cerramos socket y eliminamos referencia a la llamada
         self.llamada.finalizar_sesion()
         self.llamada = None
         # Volvemos al estado de GUI normal
         self.app.hideSubWindow("peer", useStopFunction=True)
+        self.app.stopSubWindow()
         self.app.hideButton("Pausar")
         self.app.hideButton("Colgar")
         self.app.showButton("Conectar")
@@ -287,9 +290,9 @@ class VideoClient(object):
                     self.app.errorBox("Not found", "¡El usuario no ha sido encontrado!")
         elif button == "Usuarios":
             # Muestra en una subventana la lista de usuarios con los que poder conectarse
-            self.app.openSubWindow("Usuarios")
             info, users = ds_request.list_users()
             if info[0] == 'OK':
+                self.app.openSubWindow("Usuarios")
                 self.app.updateListBox("users", [i.split()[:-1] for i in users if i], select=False, callFunction=True)
                 self.app.stopSubWindow()
                 self.app.showSubWindow("Usuarios")
@@ -318,8 +321,12 @@ class VideoClient(object):
             self.finalizar_llamada()
         elif button == "Pausar":
             call_request.pausar([self.llamada.dst_ip, self.llamada.dstTCPport], self.user_nickname)
+            self.app.hideButton("Pausar")
+            self.app.showButton("Reanudar")
         elif button == "Reanudar":
             call_request.reanudar([self.llamada.dst_ip, self.llamada.dstTCPport], self.user_nickname)
+            self.app.hideButton("Reanudar")
+            self.app.showButton("Pausar")
 
 
 class Access(object):

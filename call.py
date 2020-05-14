@@ -54,7 +54,7 @@ class Call(object):
             packet = {'timestamp': vals[1].decode(),
                       'resolution': vals[2].decode(),
                       'fps': vals[3].decode(),
-                      'encimg': vals[4]}
+                      'encimg': b'#'.join(vals[4:])}
             id_frame = int(vals[0].decode())
             # Si el id del paquete es menor que el siguiente a reproducirse menos uno, lo descartamos
             if not self.empty_buffer():
