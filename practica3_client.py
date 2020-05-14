@@ -21,7 +21,7 @@ class VideoClient(object):
         self.user_nickname = user_nickname
         self.user_ip = user_ip
         self.tcp_port = int(tcp_port)
-        self.udp_port = 8020
+        self.udp_port = 8080
         self.llamada = None
         self.version = 'V0'
 
@@ -49,7 +49,7 @@ class VideoClient(object):
         # Hilo de recibir video
         self.recvVideo_th = None
         # Hilo de mostrar video recibido almacenado en buffer
-        self.bufferVideo_th = threading.Thread(target=self.reproducirVideo)
+        self.bufferVideo_th = None
         self.play_flag = False
         # Hilo de atender comandos de control
         self.callCtrl_th = threading.Thread(target=self.call_control)
@@ -113,7 +113,7 @@ class VideoClient(object):
                 self.llamada.enviar_frame(payload)
 
             # Los frames se obtienen (y envian) con cierto intervalo
-            sleep(0.02)
+            sleep(0.05)
 
     def reproducirVideo(self):
         while self.play_flag:
@@ -150,7 +150,7 @@ class VideoClient(object):
 
     def iniciar_llamada(self, dst_ip, dstTCPport, dstUDPport, rcv=False):
         if self.llamada is None or rcv:
-            self.llamada = Call(self.user_ip, self.tcp_port, dst_ip, dstUDPport, dstTCPport)
+            self.llamada = Call(self.user_ip, self.udp_port, dst_ip, dstUDPport, dstTCPport)
         else:
             self.app.errorBox("BUSY", "¡Ya hay una llamada en curso!")
             return
@@ -164,6 +164,7 @@ class VideoClient(object):
         self.recvVideo_th.start()
         # Hilo de mostrar video recibido almacenado en buffer
         self.play_flag = True
+        self.bufferVideo_th = threading.Thread(target=self.reproducirVideo)
         self.bufferVideo_th.start()
 
         self.app.hideButton("Conectar")
@@ -184,6 +185,7 @@ class VideoClient(object):
         self.app.hideSubWindow("peer", useStopFunction=True)
         self.app.stopSubWindow()
         self.app.hideButton("Pausar")
+        self.app.hideButton("Reanudar")
         self.app.hideButton("Colgar")
         self.app.showButton("Conectar")
         self.app.showButton("Usuarios")
