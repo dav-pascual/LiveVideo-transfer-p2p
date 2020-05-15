@@ -10,3 +10,6 @@ __pycache__/
 # imgs/ GUI
 imgs/*
 !imgs/.gitkeep
+
+# Script jitter
+simulate_internet.sh

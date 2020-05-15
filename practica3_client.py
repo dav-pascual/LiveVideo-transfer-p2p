@@ -9,6 +9,7 @@ from call import Call
 from time import time, sleep
 import socket
 import threading
+import os
 
 
 BUFFER_SIZE = 1024
@@ -52,6 +53,7 @@ class VideoClient(object):
         self.bufferVideo_th = None
         self.play_flag = False
         # Hilo de atender comandos de control
+        self.control_sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
         self.callCtrl_th = threading.Thread(target=self.call_control)
         self.callCtrl_th.daemon = True
         self.callCtrl_th.start()
@@ -65,7 +67,7 @@ class VideoClient(object):
 
         # Definición subventana del video del peer de la llamada
         with self.app.subWindow("peer", size="640x500"):
-            self.app.addImage("video_peer", "imgs/webcam2.gif")
+            self.app.addImage("video_peer", "imgs/webcam.gif")
 
         # Definición subventana listar usuarios
         with self.app.subWindow("Usuarios", size="500x470"):
@@ -113,7 +115,7 @@ class VideoClient(object):
                 self.llamada.enviar_frame(payload)
 
             # Los frames se obtienen (y envian) con cierto intervalo
-            sleep(0.025)
+            sleep(0.045)
 
     def reproducirVideo(self):
         while self.play_flag:
@@ -128,6 +130,8 @@ class VideoClient(object):
                     img_tk = ImageTk.PhotoImage(Image.fromarray(cv2_im))
                     # Lo mostramos en el GUI
                     self.app.setImageData("video_peer", img_tk, fmt='PhotoImage')
+                    self.app.setStatusbar("Frames en buffer: " + str(len(self.llamada.buffer)), 0)
+            # Los frames se reproducen (y reciben) con cierto intervalo
             sleep(0.05)
 
     # Establece la resolución de la imagen capturada
@@ -146,7 +150,7 @@ class VideoClient(object):
             self.cap.set(cv2.CAP_PROP_FRAME_HEIGHT, 480)
 
     def iniciar_llamada(self, dst_ip, dstTCPport, dstUDPport, rcv=False):
-        if self.llamada is None or rcv:
+        if self.llamada is None:
             self.llamada = Call(self.user_ip, self.udp_port, dst_ip, dstUDPport, dstTCPport)
         else:
             self.app.errorBox("BUSY", "¡Ya hay una llamada en curso!")
@@ -188,15 +192,15 @@ class VideoClient(object):
         self.app.showButton("Usuarios")
         self.app.showButton("Buscar")
         self.app.showButton("Cambiar Nick")
+        self.app.clearStatusbar(0)
 
     def call_control(self):
         # Abrimos socket TCP de recepcion de comandos de control
-        control_sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-        control_sock.bind((self.user_ip, self.tcp_port))
-        control_sock.listen(1)
+        self.control_sock.bind((self.user_ip, self.tcp_port))
+        self.control_sock.listen(1)
 
-        while True:
-            connection, client_address = control_sock.accept()
+        while not self.exit_flag:
+            connection, client_address = self.control_sock.accept()
             try:
                 data = connection.recv(BUFFER_SIZE)  # TODO timeout?
                 if not data:
@@ -233,7 +237,6 @@ class VideoClient(object):
                     pass
             finally:
                 connection.close()
-        control_sock.close()
 
     # Función que gestiona los callbacks de los botones
     def buttonsCallback(self, button):
@@ -242,8 +245,10 @@ class VideoClient(object):
             if self.llamada:
                 self.finalizar_llamada()
             self.exit_flag = True
-            sleep(0.3)
+            self.control_sock.close()
+            sleep(0.2)
             self.app.stop()
+            os._exit(0)
         elif button == "Conectar":
             # Entrada del nick del usuario a conectar
             nick = self.app.textBox("Conexión",
@@ -396,7 +401,7 @@ class Access(object):
                 else:
                     if user_reg[1] == 'WRONG_PASS':
                         self.app.errorBox("Clave incorrecta", "¡Contraseña incorrecta!")
-                        self.app.clearEntry("userEnt2")
+                        self.app.clearEntry("passEnt2")
                     else:
                         self.app.errorBox("Error campos", "Rellene los campos correctamente.")
             else:

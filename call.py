@@ -63,7 +63,6 @@ class Call(object):
             # Si no, insertamos el frame en el buffer ordenado, como una tupla (id, frame_dict)
             bisect.insort(self.buffer, (id_frame, packet))
             # Si hemos llenado el buffer al tamaño deseado ponemos buffering a False
-            print(len(self.buffer))
             if self.buffering and len(self.buffer) >= self.buffer_size:
                 self.buffering = False
 
