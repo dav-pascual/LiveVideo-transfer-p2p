@@ -9,7 +9,6 @@ from call import Call
 from time import time, sleep
 import socket
 import threading
-import sys
 
 
 BUFFER_SIZE = 1024
@@ -96,7 +95,6 @@ class VideoClient(object):
 
             # Lo mostramos en el GUI
             self.app.setImageData("video", img_tk, fmt='PhotoImage')
-
             # Si hay una llamada enviamos el frame
             if self.llamada is not None and not self.llamada.pause:
                 # Compresión JPG al 50% de resolución
@@ -111,7 +109,6 @@ class VideoClient(object):
                 self.llamada.inc_idsend()
                 payload = bytes(cabecera, encoding='utf8') + encimg
                 self.llamada.enviar_frame(payload)
-
             # Los frames se obtienen (y envian) con cierto intervalo
             sleep(0.045)
 
@@ -147,9 +144,9 @@ class VideoClient(object):
             self.cap.set(cv2.CAP_PROP_FRAME_WIDTH, 640)
             self.cap.set(cv2.CAP_PROP_FRAME_HEIGHT, 480)
 
-    def iniciar_llamada(self, dst_ip, dstTCPport, dstUDPport, rcv=False):
+    def iniciar_llamada(self, dst_ip, dstTCPport, dstUDPport):
         if self.llamada is None:
-            self.llamada = Call(self.user_ip, self.udp_port, dst_ip, dstUDPport, dstTCPport)
+            self.llamada = Call(self.user_ip, self.udp_port, self.tcp_port, dst_ip, dstUDPport, dstTCPport)
         else:
             self.app.errorBox("BUSY", "¡Ya hay una llamada en curso!")
             return
@@ -172,12 +169,14 @@ class VideoClient(object):
         self.app.showButton("Pausar")
         self.app.showButton("Colgar")
 
-    def finalizar_llamada(self):
+    def finalizar_llamada(self, lost_conn=False):
         # Dejamos de mostrar video recibido
         self.play_flag = False
-        sleep(0.1)
+        self.bufferVideo_th.join()
         # Dejamos de recibir video, cerramos socket y eliminamos referencia a la llamada
-        self.llamada.finalizar_sesion()
+        if lost_conn:
+            self.app.errorBox("Lost conn", "Se ha perdido la conexion")
+        self.llamada.finalizar_sesion(self.recvVideo_th)
         self.llamada = None
         # Volvemos al estado de GUI normal
         self.app.hideSubWindow("peer", useStopFunction=True)
@@ -191,6 +190,16 @@ class VideoClient(object):
         self.app.showButton("Cambiar Nick")
         self.app.clearStatusbar(0)
 
+    def salir(self):
+        # Salimos de la aplicación
+        if self.llamada:
+            self.finalizar_llamada()
+        self.exit_flag = True
+        socket.socket(socket.AF_INET, socket.SOCK_STREAM).connect((self.user_ip, self.tcp_port))
+        self.control_sock.shutdown(socket.SHUT_RDWR)
+        self.control_sock.close()
+        self.app.stop()
+
     def call_control(self):
         # Abrimos socket TCP de recepcion de comandos de control
         self.control_sock.bind((self.user_ip, self.tcp_port))
@@ -199,7 +208,7 @@ class VideoClient(object):
         while not self.exit_flag:
             connection, client_address = self.control_sock.accept()
             try:
-                data = connection.recv(BUFFER_SIZE)  # TODO timeout?
+                data = connection.recv(BUFFER_SIZE)
                 if not data:
                     continue
                 current_data = data.decode()
@@ -212,7 +221,7 @@ class VideoClient(object):
                             mensaje = "CALL_ACCEPTED " + self.user_nickname + " " + str(self.udp_port)
                             print("--> " + mensaje)
                             connection.sendall(bytes(mensaje, encoding='utf8'))
-                            self.iniciar_llamada(user_query[3], user_query[4], command[2], rcv=True)
+                            self.iniciar_llamada(user_query[3], user_query[4], command[2])
                         else:
                             mensaje = "CALL_BUSY"
                             print("--> " + mensaje)
@@ -228,6 +237,8 @@ class VideoClient(object):
                         self.llamada.pause = False
                     elif command[0] == "CALL_END":
                         self.finalizar_llamada()
+                    elif command[0] == "LOST_CONN":
+                        self.finalizar_llamada(lost_conn=True)
                     else:
                         pass
                 else:
@@ -238,13 +249,10 @@ class VideoClient(object):
     # Función que gestiona los callbacks de los botones
     def buttonsCallback(self, button):
         if button == "Salir":
-            # Salimos de la aplicación
-            if self.llamada:
+            if self.llamada is not None:
+                call_request.finalizar([self.llamada.dst_ip, self.llamada.dstTCPport], self.user_nickname)
                 self.finalizar_llamada()
-            self.exit_flag = True
-            self.control_sock.close()
-            sleep(0.2)
-            self.app.stop()
+            self.salir()
         elif button == "Conectar":
             # Entrada del nick del usuario a conectar
             nick = self.app.textBox("Conexión",

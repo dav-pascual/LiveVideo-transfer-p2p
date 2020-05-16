@@ -14,19 +14,19 @@ def llamar(dst_user, src_nick, srcUDPport):
 def pausar(dst_user, src_nick):
     mensaje = 'CALL_HOLD ' + src_nick
     print("--> " + mensaje)
-    resp = tcp_conn(mensaje, dst_user[0], dst_user[1])
+    tcp_conn(mensaje, dst_user[0], dst_user[1])
 
 
 def reanudar(dst_user, src_nick):
     mensaje = 'CALL_RESUME ' + src_nick
     print("--> " + mensaje)
-    resp = tcp_conn(mensaje, dst_user[0], dst_user[1])
+    tcp_conn(mensaje, dst_user[0], dst_user[1])
 
 
 def finalizar(dst_user, src_nick):
     mensaje = 'CALL_END ' + src_nick
     print("--> " + mensaje)
-    resp = tcp_conn(mensaje, dst_user[0], dst_user[1])
+    tcp_conn(mensaje, dst_user[0], dst_user[1])
 
 
 def tcp_conn(mensaje, direccion, puerto, resp=False):
