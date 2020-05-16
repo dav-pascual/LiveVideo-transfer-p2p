@@ -9,7 +9,7 @@ from call import Call
 from time import time, sleep
 import socket
 import threading
-import os
+import sys
 
 
 BUFFER_SIZE = 1024
@@ -17,7 +17,7 @@ BUFFER_SIZE = 1024
 
 class VideoClient(object):
 
-    def __init__(self, window_size, user_nickname, user_ip, tcp_port):
+    def __init__(self, user_nickname, user_ip, tcp_port):
         # Inicializamos datos del usuario
         self.user_nickname = user_nickname
         self.user_ip = user_ip
@@ -27,19 +27,17 @@ class VideoClient(object):
         self.version = 'V0'
 
         # Creamos una variable que contenga el GUI principal
-        self.app = gui("Redes2 - P2P", window_size)
+        self.app = gui("Redes2 - P2P", "880x610")
         self.app.setGuiPadding(10, 10)
 
         # Preparación del interfaz
-        self.app.addLabel("title", "Cliente Multimedia P2P - Redes2 ")
-        self.app.addImage("video", "imgs/webcam.gif")
+        self.app.addLabel("title", "Cliente Multimedia P2P - Redes2 ", 0, 0).config(font=("Sans Serif", "14", "bold"))
+        self.app.addImage("video", "imgs/webcam.gif", compound="center")
 
         # Registramos la función de captura de video
         # Esta misma función también sirve para enviar un vídeo
         # VideoCapture object
         self.cap = cv2.VideoCapture(0)
-        # self.app.setPollTime(20)
-        # self.app.registerEvent(self.capturaVideo)
 
         # Definimos hilos
         self.exit_flag = False
@@ -66,11 +64,11 @@ class VideoClient(object):
         self.app.hideButton("Colgar")
 
         # Definición subventana del video del peer de la llamada
-        with self.app.subWindow("peer", size="640x500"):
-            self.app.addImage("video_peer", "imgs/webcam.gif")
+        with self.app.subWindow("peer", size="860x490"):
+            self.app.addImage("video_peer", "imgs/webcam.gif", compound="center")
 
         # Definición subventana listar usuarios
-        with self.app.subWindow("Usuarios", size="500x470"):
+        with self.app.subWindow("Usuarios", size="500x480"):
             self.app.label("Lista de usuarios")
             self.app.getLabelWidget("Lista de usuarios").config(font=("Sans Serif", "16", "bold"))
             self.app.label("Selecciona uno para establecer una conexión:")
@@ -102,7 +100,7 @@ class VideoClient(object):
             # Si hay una llamada enviamos el frame
             if self.llamada is not None and not self.llamada.pause:
                 # Compresión JPG al 50% de resolución
-                encode_param = [cv2.IMWRITE_JPEG_QUALITY, 50]
+                encode_param = [cv2.IMWRITE_JPEG_QUALITY, 80]
                 result, encimg = cv2.imencode('.jpg', frame, encode_param)
                 if not result:
                     print('Error al codificar imagen')
@@ -155,7 +153,6 @@ class VideoClient(object):
         else:
             self.app.errorBox("BUSY", "¡Ya hay una llamada en curso!")
             return
-
         # Abrimos subventana para mostrar video del peer
         self.app.openSubWindow("peer")
         self.app.showSubWindow("peer")
@@ -248,7 +245,6 @@ class VideoClient(object):
             self.control_sock.close()
             sleep(0.2)
             self.app.stop()
-            os._exit(0)
         elif button == "Conectar":
             # Entrada del nick del usuario a conectar
             nick = self.app.textBox("Conexión",
@@ -377,7 +373,7 @@ class Access(object):
             if user_reg[0] == 'OK':
                 self.app.infoBox("registered", "Registro correcto")
                 self.app.stop()
-                vc = VideoClient("640x520", nick, ip, port)
+                vc = VideoClient(nick, ip, port)
                 vc.start()
             else:
                 if user_reg[1] == 'WRONG_PASS':
@@ -396,7 +392,7 @@ class Access(object):
                 if user_reg[0] == 'OK':
                     self.app.infoBox("logged", "Acceso correcto")
                     self.app.stop()
-                    vc = VideoClient("640x520", nick, user_query[3], user_query[4])
+                    vc = VideoClient(nick, user_query[3], user_query[4])
                     vc.start()
                 else:
                     if user_reg[1] == 'WRONG_PASS':
