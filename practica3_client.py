@@ -107,20 +107,23 @@ class VideoClient(object):
 
             # Lo mostramos en el GUI
             self.app.setImageData("video", img_tk, fmt='PhotoImage')
-            # Si hay una llamada enviamos el frame
-            if self.llamada is not None and not self.llamada.pause:
-                # Compresión JPG al 50% de resolución
-                encode_param = [cv2.IMWRITE_JPEG_QUALITY, 80]
-                result, encimg = cv2.imencode('.jpg', frame, encode_param)
-                if not result:
-                    print('Error al codificar imagen')
-                encimg = encimg.tobytes()
+            try:
+                # Si hay una llamada enviamos el frame
+                if self.llamada is not None and not self.llamada.pause:
+                    # Compresión JPG al 50% de resolución
+                    encode_param = [cv2.IMWRITE_JPEG_QUALITY, 80]
+                    result, encimg = cv2.imencode('.jpg', frame, encode_param)
+                    if not result:
+                        print('Error al codificar imagen')
+                    encimg = encimg.tobytes()
 
-                # Creamos el mensaje y enviamos
-                cabecera = "{}#{}#{}#{}#".format(str(self.llamada.id_send), str(time()), "640x480", "20")
-                self.llamada.inc_idsend()
-                payload = bytes(cabecera, encoding='utf8') + encimg
-                self.llamada.enviar_frame(payload)
+                    # Creamos el mensaje y enviamos
+                    cabecera = "{}#{}#{}#{}#".format(str(self.llamada.id_send), str(time()), "640x480", "20")
+                    self.llamada.inc_idsend()
+                    payload = bytes(cabecera, encoding='utf8') + encimg
+                    self.llamada.enviar_frame(payload)
+            except AttributeError:
+                pass  # La llamada se ha eliminado
             # Los frames se obtienen (y envian) con cierto intervalo
             sleep(0.045)
         self.cap.release()
@@ -128,17 +131,20 @@ class VideoClient(object):
 
     def reproducirVideo(self):
         while self.play_flag:
-            if not self.llamada.buffering and not self.llamada.empty_buffer():
-                frame = self.llamada.buffer.pop(0)[1]
-                encimg = frame['encimg']
-                # Descompresión de los datos, una vez recibidos
-                decimg = cv2.imdecode(np.frombuffer(encimg, np.uint8), 1)
-                # Conversión de formato para su uso en el GUI
-                cv2_im = cv2.cvtColor(decimg, cv2.COLOR_BGR2RGB)
-                img_tk = ImageTk.PhotoImage(Image.fromarray(cv2_im))
-                # Lo mostramos en el GUI
-                self.app.setImageData("video_peer", img_tk, fmt='PhotoImage')
-                self.app.setStatusbar("Frames en buffer: " + str(len(self.llamada.buffer)), 0)
+            try:
+                if not self.llamada.buffering and not self.llamada.empty_buffer():
+                    frame = self.llamada.buffer.pop(0)[1]
+                    encimg = frame['encimg']
+                    # Descompresión de los datos, una vez recibidos
+                    decimg = cv2.imdecode(np.frombuffer(encimg, np.uint8), 1)
+                    # Conversión de formato para su uso en el GUI
+                    cv2_im = cv2.cvtColor(decimg, cv2.COLOR_BGR2RGB)
+                    img_tk = ImageTk.PhotoImage(Image.fromarray(cv2_im))
+                    # Lo mostramos en el GUI
+                    self.app.setImageData("video_peer", img_tk, fmt='PhotoImage')
+                    self.app.setStatusbar("Frames en buffer: " + str(len(self.llamada.buffer)), 0)
+            except AttributeError:
+                pass  # La llamada se ha eliminado
             # Los frames se reproducen (y reciben) con cierto intervalo
             sleep(0.05)
 
@@ -182,13 +188,10 @@ class VideoClient(object):
         self.app.showButton("Pausar")
         self.app.showButton("Colgar")
 
-    def finalizar_llamada(self, lost_conn=False):
+    def finalizar_llamada(self):
         # Dejamos de mostrar video recibido
         self.play_flag = False
-        self.bufferVideo_th.join()
         # Dejamos de recibir video, cerramos socket y eliminamos referencia a la llamada
-        if lost_conn:
-            self.app.errorBox("Lost conn", "Se ha perdido la conexion")
         self.llamada.finalizar_sesion(self.recvVideo_th)
         self.llamada = None
         # Volvemos al estado de GUI normal
@@ -246,6 +249,7 @@ class VideoClient(object):
                 elif self.llamada is not None:
                     if command[0] == "CALL_HOLD":
                         self.llamada.pause = True
+                        del self.llamada.buffer[:]
                         self.llamada.buffering = True
                         self.app.hideButton("Pausar")
                         self.app.showButton("Reanudar")
@@ -255,9 +259,6 @@ class VideoClient(object):
                         self.app.showButton("Pausar")
                     elif command[0] == "CALL_END":
                         self.finalizar_llamada()
-                    elif command[0] == "LOST_CONN":
-                        call_request.finalizar([self.llamada.dst_ip, self.llamada.dstTCPport], self.user_nickname)
-                        self.finalizar_llamada(lost_conn=True)
                     else:
                         pass
                 else:
@@ -349,10 +350,12 @@ class VideoClient(object):
         elif button == "Pausar":
             self.llamada.pause = True
             call_request.pausar([self.llamada.dst_ip, self.llamada.dstTCPport], self.user_nickname)
+            del self.llamada.buffer[:]
             self.llamada.buffering = True
             self.app.hideButton("Pausar")
             self.app.showButton("Reanudar")
         elif button == "Reanudar":
+            self.llamada.pause = False
             call_request.reanudar([self.llamada.dst_ip, self.llamada.dstTCPport], self.user_nickname)
             self.app.hideButton("Reanudar")
             self.app.showButton("Pausar")

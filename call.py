@@ -4,7 +4,6 @@ import call_request
 
 MAX_UDP_BUFFER = 65507
 TCP_BUFFER = 1024
-TIMEOUT = 5
 
 
 class Call(object):
@@ -30,7 +29,7 @@ class Call(object):
         self.recv_sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
         self.recv_sock.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
         self.recv_sock.bind((self.src_ip, self.srcUDPport))
-        self.recv_sock.settimeout(TIMEOUT)
+        # self.recv_sock.settimeout(10)
 
         # Creamos buffer
         self.buffer = []
@@ -50,15 +49,7 @@ class Call(object):
     def recibir_frames(self):
         while not self.finalizar:
             # Recibimos frame en el socket
-            try:
-                data, addr = self.recv_sock.recvfrom(MAX_UDP_BUFFER)
-            except socket.timeout:
-                if self.pause:
-                    continue
-                else:
-                    # Salta timeout, se asume perdida de conexion
-                    call_request.tcp_conn("LOST_CONN", self.src_ip, self.srcTCPport)
-                    break
+            data, addr = self.recv_sock.recvfrom(MAX_UDP_BUFFER)
             # Automensaje de que la llamada ha terminado
             if data == b'STOP':
                 break
