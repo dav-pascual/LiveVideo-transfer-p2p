@@ -11,5 +11,9 @@ __pycache__/
 imgs/*
 !imgs/.gitkeep
 
+# Video dir
+video/
+!video/.gitkeep
+
 # Script jitter
 simulate_internet.sh

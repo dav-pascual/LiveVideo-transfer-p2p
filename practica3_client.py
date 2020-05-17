@@ -9,7 +9,8 @@ from call import Call
 from time import time, sleep
 import socket
 import threading
-
+import os
+import config
 
 BUFFER_SIZE = 1024
 
@@ -19,14 +20,14 @@ class VideoClient(object):
     def __init__(self, user_nickname, user_ip, tcp_port):
         # Inicializamos datos del usuario
         self.user_nickname = user_nickname
-        self.user_ip = user_ip
+        self.user_ip = config.IP
         self.tcp_port = int(tcp_port)
-        self.udp_port = 8080
+        self.udp_port = config.UDP_port
+        self.version = config.VERSION
         self.llamada = None
-        self.version = 'V0'
 
         # Creamos una variable que contenga el GUI principal
-        self.app = gui("Redes2 - P2P", "880x610")
+        self.app = gui("Redes2 - P2P", "650x610")
         self.app.setGuiPadding(10, 10)
 
         # Preparación del interfaz
@@ -34,9 +35,13 @@ class VideoClient(object):
         self.app.addImage("video", "imgs/webcam.gif", compound="center")
 
         # Registramos la función de captura de video
-        # Esta misma función también sirve para enviar un vídeo
         # VideoCapture object
-        self.cap = cv2.VideoCapture(0)
+        if config.VIDEO_MODE:
+            self.cap = cv2.VideoCapture(os.path.abspath(os.path.join(config.VIDEO_DIR, config.VIDEO_FILE)))
+            self.capt_cond = self.cap.isOpened()
+        else:
+            self.cap = cv2.VideoCapture(0)
+            self.capt_cond = True
 
         # Definimos hilos
         self.exit_flag = False
@@ -63,7 +68,7 @@ class VideoClient(object):
         self.app.hideButton("Colgar")
 
         # Definición subventana del video del peer de la llamada
-        with self.app.subWindow("peer", size="860x490"):
+        with self.app.subWindow("peer", size="650x490"):
             self.app.addImage("video_peer", "imgs/webcam.gif", compound="center")
 
         # Definición subventana listar usuarios
@@ -86,9 +91,16 @@ class VideoClient(object):
 
     # Función que captura el frame a mostrar en cada momento y lo envia en caso de que haya una llamada en curso
     def capturaVideo(self):
-        while not self.exit_flag:
+        frame_counter = 0
+        while not self.exit_flag and self.capt_cond:
             # Capturamos un frame de la cámara o del vídeo
             ret, frame = self.cap.read()
+            frame_counter += 1
+            # Si alcanzamos el ultimo frame del video, volvemos al primero
+            if frame_counter == self.cap.get(cv2.CAP_PROP_FRAME_COUNT):
+                frame_counter = 0
+                self.cap.set(cv2.CAP_PROP_POS_FRAMES, 0)
+
             frame = cv2.resize(frame, (640, 480))
             cv2_im = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
             img_tk = ImageTk.PhotoImage(Image.fromarray(cv2_im))
@@ -111,21 +123,22 @@ class VideoClient(object):
                 self.llamada.enviar_frame(payload)
             # Los frames se obtienen (y envian) con cierto intervalo
             sleep(0.045)
+        self.cap.release()
+        cv2.destroyAllWindows()
 
     def reproducirVideo(self):
         while self.play_flag:
-            if not self.llamada.buffering:
-                if not self.llamada.empty_buffer():
-                    frame = self.llamada.buffer.pop(0)[1]
-                    encimg = frame['encimg']
-                    # Descompresión de los datos, una vez recibidos
-                    decimg = cv2.imdecode(np.frombuffer(encimg, np.uint8), 1)
-                    # Conversión de formato para su uso en el GUI
-                    cv2_im = cv2.cvtColor(decimg, cv2.COLOR_BGR2RGB)
-                    img_tk = ImageTk.PhotoImage(Image.fromarray(cv2_im))
-                    # Lo mostramos en el GUI
-                    self.app.setImageData("video_peer", img_tk, fmt='PhotoImage')
-                    self.app.setStatusbar("Frames en buffer: " + str(len(self.llamada.buffer)), 0)
+            if not self.llamada.buffering and not self.llamada.empty_buffer():
+                frame = self.llamada.buffer.pop(0)[1]
+                encimg = frame['encimg']
+                # Descompresión de los datos, una vez recibidos
+                decimg = cv2.imdecode(np.frombuffer(encimg, np.uint8), 1)
+                # Conversión de formato para su uso en el GUI
+                cv2_im = cv2.cvtColor(decimg, cv2.COLOR_BGR2RGB)
+                img_tk = ImageTk.PhotoImage(Image.fromarray(cv2_im))
+                # Lo mostramos en el GUI
+                self.app.setImageData("video_peer", img_tk, fmt='PhotoImage')
+                self.app.setStatusbar("Frames en buffer: " + str(len(self.llamada.buffer)), 0)
             # Los frames se reproducen (y reciben) con cierto intervalo
             sleep(0.05)
 
@@ -233,11 +246,17 @@ class VideoClient(object):
                 elif self.llamada is not None:
                     if command[0] == "CALL_HOLD":
                         self.llamada.pause = True
+                        self.llamada.buffering = True
+                        self.app.hideButton("Pausar")
+                        self.app.showButton("Reanudar")
                     elif command[0] == "CALL_RESUME":
                         self.llamada.pause = False
+                        self.app.hideButton("Reanudar")
+                        self.app.showButton("Pausar")
                     elif command[0] == "CALL_END":
                         self.finalizar_llamada()
                     elif command[0] == "LOST_CONN":
+                        call_request.finalizar([self.llamada.dst_ip, self.llamada.dstTCPport], self.user_nickname)
                         self.finalizar_llamada(lost_conn=True)
                     else:
                         pass
@@ -328,7 +347,9 @@ class VideoClient(object):
             call_request.finalizar([self.llamada.dst_ip, self.llamada.dstTCPport], self.user_nickname)
             self.finalizar_llamada()
         elif button == "Pausar":
+            self.llamada.pause = True
             call_request.pausar([self.llamada.dst_ip, self.llamada.dstTCPport], self.user_nickname)
+            self.llamada.buffering = True
             self.app.hideButton("Pausar")
             self.app.showButton("Reanudar")
         elif button == "Reanudar":
@@ -422,11 +443,3 @@ class Access(object):
 if __name__ == '__main__':
     access = Access()
     access.start()
-
-    # Crear aquí los threads de lectura, de recepción y,
-    # en general, todo el código de inicialización que sea necesario
-    # ...
-
-    # Lanza el bucle principal del GUI
-    # El control ya NO vuelve de esta función, por lo que todas las
-    # acciones deberán ser gestionadas desde callbacks y threads

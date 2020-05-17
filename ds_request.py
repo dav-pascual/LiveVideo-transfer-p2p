@@ -1,9 +1,7 @@
 import socket
+from config import DS_ADRESS, DS_PORT, VERSION
 
-DS_ADRESS = 'vega.ii.uam.es'
-DS_PORT = 8000
 BUFFER_SIZE = 1024
-VERSION = 'V0'
 
 
 def register(nick, password, user_ip, user_port):
