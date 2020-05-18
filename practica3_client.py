@@ -42,6 +42,8 @@ class VideoClient(object):
         else:
             self.cap = cv2.VideoCapture(0)
             self.capt_cond = True
+        self.fps = self.cap.get(cv2.CAP_PROP_FPS)
+        # self.setImageResolution("HIGH")
 
         # Definimos hilos
         self.exit_flag = False
@@ -84,7 +86,8 @@ class VideoClient(object):
 
         # Barra de estado
         # Debe actualizarse con información útil sobre la llamada (duración, FPS, etc...)
-        self.app.addStatusbar(fields=2)
+        self.app.addStatusbar(fields=3)
+        self.app.setStatusbar("FPS OUTPUT: " + str(self.fps), 2)
 
     def start(self):
         self.app.go()
@@ -124,13 +127,15 @@ class VideoClient(object):
                     self.llamada.enviar_frame(payload)
             except AttributeError:
                 pass  # La llamada se ha eliminado
-            # Los frames se obtienen (y envian) con cierto intervalo
-            sleep(0.045)
+            # Los frames de un video se obtienen (y envian) con cierto intervalo
+            # if config.VIDEO_MODE:
+            sleep((1/self.fps) - 0.005)
         self.cap.release()
         cv2.destroyAllWindows()
 
     def reproducirVideo(self):
         while self.play_flag:
+            frame = None
             try:
                 if not self.llamada.buffering and not self.llamada.empty_buffer():
                     frame = self.llamada.buffer.pop(0)[1]
@@ -143,10 +148,14 @@ class VideoClient(object):
                     # Lo mostramos en el GUI
                     self.app.setImageData("video_peer", img_tk, fmt='PhotoImage')
                     self.app.setStatusbar("Frames en buffer: " + str(len(self.llamada.buffer)), 0)
+                    self.app.setStatusbar("FPS PEER: " + str(int(frame['fps']) + self.llamada.fps_adjust), 1)
+                # Los frames se reproducen (y reciben) con cierto intervalo
+                if frame:
+                    sleep((1 / (int(frame['fps']) + self.llamada.fps_adjust)) - 0.005)
+                else:
+                    sleep(1 / self.fps)
             except AttributeError:
                 pass  # La llamada se ha eliminado
-            # Los frames se reproducen (y reciben) con cierto intervalo
-            sleep(0.05)
 
     # Establece la resolución de la imagen capturada
     def setImageResolution(self, resolution):
@@ -205,6 +214,7 @@ class VideoClient(object):
         self.app.showButton("Buscar")
         self.app.showButton("Cambiar Nick")
         self.app.clearStatusbar(0)
+        self.app.clearStatusbar(1)
 
     def salir(self):
         # Salimos de la aplicación
@@ -280,8 +290,15 @@ class VideoClient(object):
             if not nick:
                 return
             user_query = ds_request.query_user(nick)
+            if user_query[2] == self.user_nickname:
+                self.app.errorBox("Self call", "¡No vale llamarse a sí mismo!")
+                return
             if user_query[0] == 'OK':
-                resp = call_request.llamar(user_query[3:5], self.user_nickname, self.udp_port)
+                try:
+                    resp = call_request.llamar(user_query[3:5], self.user_nickname, self.udp_port)
+                except (ConnectionRefusedError, socket.gaierror):
+                    self.app.errorBox("Conn refused", "Error de conexión")
+                    return
                 if resp[0] == 'CALL_ACCEPTED':
                     self.iniciar_llamada(user_query[3], user_query[4], resp[2])
                 elif resp[0] == 'CALL_DENIED':
@@ -334,8 +351,15 @@ class VideoClient(object):
             else:
                 self.app.hideSubWindow("Usuarios", useStopFunction=True)
                 user_query = ds_request.query_user(selected[0][0])
+                if user_query[2] == self.user_nickname:
+                    self.app.errorBox("Self call", "¡No vale llamarse a sí mismo!")
+                    return
                 if user_query[0] == 'OK':
-                    resp = call_request.llamar(user_query[3:5], self.user_nickname, self.udp_port)
+                    try:
+                        resp = call_request.llamar(user_query[3:5], self.user_nickname, self.udp_port)
+                    except (ConnectionRefusedError, socket.gaierror):
+                        self.app.errorBox("Conn refused", "Error de conexión")
+                        return
                     if resp[0] == 'CALL_ACCEPTED':
                         self.iniciar_llamada(user_query[3], user_query[4], resp[2])
                     elif resp[0] == 'CALL_DENIED':

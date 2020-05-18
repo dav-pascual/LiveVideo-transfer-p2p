@@ -27,7 +27,10 @@ def reanudar(dst_user, src_nick):
 def finalizar(dst_user, src_nick):
     mensaje = 'CALL_END ' + src_nick
     print("--> " + mensaje)
-    tcp_conn(mensaje, dst_user[0], dst_user[1])
+    try:
+        tcp_conn(mensaje, dst_user[0], dst_user[1])
+    except ConnectionRefusedError:
+        pass
 
 
 def tcp_conn(mensaje, direccion, puerto, resp=False):

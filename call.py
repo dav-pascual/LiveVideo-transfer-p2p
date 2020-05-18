@@ -13,7 +13,7 @@ class Call(object):
         self.finalizar = False
         self.pause = False
         self.buffering = True
-        self.buffer_size = 20
+        self.buffer_size = 10
         self.id_send = 0
         self.src_ip = src_ip
         self.srcUDPport = srcUDPport
@@ -21,6 +21,7 @@ class Call(object):
         self.dstUDPport = dstUDPport
         self.srcTCPport = srcTCPport
         self.dstTCPport = dstTCPport
+        self.fps_adjust = 0
 
         # Abrimos socket UDP de envio de video
         self.send_sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
@@ -71,8 +72,18 @@ class Call(object):
             # Si no, insertamos el frame en el buffer ordenado, como una tupla (id, frame_dict)
             bisect.insort(self.buffer, (id_frame, packet))
             # Si hemos llenado el buffer al tamaño deseado ponemos buffering a False
-            if self.buffering and len(self.buffer) >= self.buffer_size:
+            buffer_len = len(self.buffer)
+            if self.buffering and buffer_len >= self.buffer_size:
                 self.buffering = False
+            # Parametro de ajuste de FPS para mantener el buffer constante
+            if buffer_len > 35:
+                self.fps_adjust = 10
+            elif 20 < buffer_len <= 30:
+                self.fps_adjust = 5
+            elif buffer_len < 5:
+                self.fps_adjust = -5
+            elif 10 <= buffer_len <= 15:
+                self.fps_adjust = 0
 
     def finalizar_sesion(self, recv_th):
         # Rompemos el loop de recibir frames y cerramos sockets
