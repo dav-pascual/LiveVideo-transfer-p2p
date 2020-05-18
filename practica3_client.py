@@ -181,7 +181,7 @@ class VideoClient(object):
                     self.app.setStatusbar("FPS PEER: " + str(int(frame['fps']) + self.llamada.fps_adjust), 1)
                 # Los frames se reproducen (y reciben) con cierto intervalo
                 if frame:
-                    sleep((1 / (int(frame['fps']) + self.llamada.fps_adjust)) - 0.005)
+                    sleep((1 / (int(frame['fps']) + self.llamada.fps_adjust)) - 0.007)
                 else:
                     sleep(1 / self.fps)
             except AttributeError:
