@@ -65,6 +65,9 @@ def tcp_conn(mensaje, users=False):
         s.connect((DS_ADRESS, DS_PORT))
         s.sendall(bytes(mensaje, encoding='utf8'))
         data = s.recv(BUFFER_SIZE)
+        s.sendall(bytes("QUIT", encoding='utf8'))
+        print("<-- " + s.recv(BUFFER_SIZE).decode())
+        s.close()
         return data.decode()
     else:
         # En caso de que queramos recibir una lista de usuarios separados con '#'
@@ -85,5 +88,7 @@ def tcp_conn(mensaje, users=False):
             # Si tenemos ya todos los usuarios esperados dejamos de recibir
             if len(total_data.split("#")) - 1 >= tam:
                 break
+        s.sendall(bytes("QUIT", encoding='utf8'))
+        print("<-- " + s.recv(BUFFER_SIZE).decode())
         s.close()
         return total_data
