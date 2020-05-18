@@ -1,6 +1,6 @@
 import socket
 import bisect
-import call_request
+from time import time
 
 MAX_UDP_BUFFER = 65507
 TCP_BUFFER = 1024
@@ -22,6 +22,8 @@ class Call(object):
         self.srcTCPport = srcTCPport
         self.dstTCPport = dstTCPport
         self.fps_adjust = 0
+        self.res = "HIGH"
+        self.new_res = False
 
         # Abrimos socket UDP de envio de video
         self.send_sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
@@ -47,7 +49,7 @@ class Call(object):
         else:
             return True
 
-    def recibir_frames(self):
+    def recibir_frames(self, setImageResolution):
         while not self.finalizar:
             # Recibimos frame en el socket
             data, addr = self.recv_sock.recvfrom(MAX_UDP_BUFFER)
@@ -75,6 +77,7 @@ class Call(object):
             buffer_len = len(self.buffer)
             if self.buffering and buffer_len >= self.buffer_size:
                 self.buffering = False
+
             # Parametro de ajuste de FPS para mantener el buffer constante
             if buffer_len > 35:
                 self.fps_adjust = 10
@@ -84,6 +87,18 @@ class Call(object):
                 self.fps_adjust = -5
             elif 10 <= buffer_len <= 15:
                 self.fps_adjust = 0
+            # Control de congestion
+            # Ajusta la resolucion de envio segun el retardo de recepcion
+            delay = time() - float(packet['timestamp'])
+            if delay >= 0.4 and self.res != "LOW":
+                self.res = "LOW"
+                self.new_res = True
+            elif delay <= 0.2 and self.res != "HIGH":
+                self.res = "HIGH"
+                self.new_res = True
+            elif 0.2 < delay < 0.4 and self.res != "MEDIUM":
+                self.res = "MEDIUM"
+                self.new_res = True
 
     def finalizar_sesion(self, recv_th):
         # Rompemos el loop de recibir frames y cerramos sockets

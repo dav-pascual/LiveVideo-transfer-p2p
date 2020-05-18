@@ -42,8 +42,9 @@ class VideoClient(object):
         else:
             self.cap = cv2.VideoCapture(0)
             self.capt_cond = True
-        self.fps = self.cap.get(cv2.CAP_PROP_FPS)
-        # self.setImageResolution("HIGH")
+        self.fps = self.cap.get(cv2.CAP_PROP_FPS)  # FPS de nuestro video/cam
+        self.res = "HIGH"  # Resolucion inicial
+        self.fin_llamada = False
 
         # Definimos hilos
         self.exit_flag = False
@@ -127,9 +128,16 @@ class VideoClient(object):
                     self.llamada.enviar_frame(payload)
             except AttributeError:
                 pass  # La llamada se ha eliminado
-            # Los frames de un video se obtienen (y envian) con cierto intervalo
-            # if config.VIDEO_MODE:
+            # Los frames se obtienen (y envian) con cierto intervalo
             sleep((1/self.fps) - 0.005)
+            if self.llamada:
+                if self.llamada.new_res:
+                    self.setImageResolution(self.llamada.res)
+                    self.llamada.new_res = False
+            else:
+                if self.fin_llamada:
+                    self.setImageResolution("HIGH")
+                    self.fin_llamada = False
         self.cap.release()
         cv2.destroyAllWindows()
 
@@ -183,7 +191,7 @@ class VideoClient(object):
         self.app.showSubWindow("peer")
 
         # Hilo de recibir video
-        self.recvVideo_th = threading.Thread(target=self.llamada.recibir_frames)
+        self.recvVideo_th = threading.Thread(target=self.llamada.recibir_frames, args=(self.setImageResolution,))
         self.recvVideo_th.start()
         # Hilo de mostrar video recibido almacenado en buffer
         self.play_flag = True
@@ -203,6 +211,7 @@ class VideoClient(object):
         # Dejamos de recibir video, cerramos socket y eliminamos referencia a la llamada
         self.llamada.finalizar_sesion(self.recvVideo_th)
         self.llamada = None
+        self.fin_llamada = True
         # Volvemos al estado de GUI normal
         self.app.hideSubWindow("peer", useStopFunction=True)
         self.app.stopSubWindow()
