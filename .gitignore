@@ -1,0 +1,19 @@
+# Byte-compiled / optimized / DLL files
+__pycache__/
+*.py[cod]
+*$py.class
+
+# Project files
+.vscode/
+.idea/
+
+# imgs/ GUI
+imgs/*
+!imgs/.gitkeep
+
+# Video dir
+video/
+!video/.gitkeep
+
+# Script jitter
+simulate_internet.sh
