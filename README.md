@@ -1,6 +1,6 @@
 # Live p2p video transfer
 
-This project implements a p2p-based video transfer client (skype-like). This program is able to:
+This project implements a p2p-based video transfer client (skype-like). It's able to:
 - Unicast video transmission between two clients.
 - Support videocam or custom video transmission.
 - Capacity to play, pause and stop.
